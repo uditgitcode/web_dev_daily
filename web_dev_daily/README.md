@@ -1,1 +1,0 @@
-# UselessCol_lecture
