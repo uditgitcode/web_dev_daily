@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Secure Connect - Chat</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    input, button { padding: .5rem; font-size: 1rem; }
+    #messages { border: 1px solid #ccc; height: 300px; overflow-y: auto; padding: .5rem; margin: 1rem 0; }
+    .note { color: #888; font-style: italic; }
+    .row { display: flex; gap: .5rem; margin-bottom: .5rem; }
+    .row input { flex: 1; }
+  </style>
+</head>
+<body>
+  <h2>Secure Connect Chat</h2>
+
+  <div id="login">
+    <div class="row"><input id="email" placeholder="Email" /></div>
+    <div class="row"><input id="password" type="password" placeholder="Password" /></div>
+    <div class="row"><input id="room" value="general" placeholder="Room" /><button id="loginBtn">Login &amp; Join</button></div>
+    <p id="error" style="color:red"></p>
+  </div>
+
+  <div id="chat" hidden>
+    <div id="messages"></div>
+    <p id="typing" class="note"></p>
+    <div class="row"><input id="text" placeholder="Type a message..." /><button id="sendBtn">Send</button></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let socket, room;
+
+    function addLine(text, cls) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      if (cls) div.className = cls;
+      $("messages").appendChild(div);
+      $("messages").scrollTop = $("messages").scrollHeight;
+    }
+
+    $("loginBtn").onclick = async () => {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: $("email").value, password: $("password").value }),
+      });
+      const data = await res.json();
+      if (!res.ok) return ($("error").textContent = data.message);
+
+      room = $("room").value || "general";
+      socket = io({ auth: { token: data.token } });
+      socket.on("connect_error", (err) => ($("error").textContent = err.message));
+      socket.on("connect", () => {
+        socket.emit("joinRoom", room);
+        $("login").hidden = true;
+        $("chat").hidden = false;
+        addLine(`You joined #${room}`, "note");
+      });
+      socket.on("chatMessage", (m) => addLine(`[${m.room}] ${m.username}: ${m.text}`));
+      socket.on("notification", (msg) => addLine(msg, "note"));
+      socket.on("typing", (user) => {
+        $("typing").textContent = `${user} is typing...`;
+        clearTimeout(window.typingTimer);
+        window.typingTimer = setTimeout(() => ($("typing").textContent = ""), 1000);
+      });
+    };
+
+    function send() {
+      const text = $("text").value.trim();
+      if (!text) return;
+      socket.emit("chatMessage", { room, text });
+      $("text").value = "";
+    }
+    $("sendBtn").onclick = send;
+    $("text").addEventListener("keydown", (e) => (e.key === "Enter" ? send() : socket.emit("typing", room)));
+  </script>
+</body>
+</html>
